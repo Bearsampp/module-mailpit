@@ -12,3 +12,6 @@ https://bearsampp.com/module/mailpit
 ## Issues
 
 Issues must be reported on [Bearsampp repository](https://github.com/bearsampp/bearsampp/issues).
+
+## Statistics
+![Alt](https://repobeats.axiom.co/api/embed/4df99c2d3004fdc34ec7d97c88c1e08c9d602149.svg "Repobeats analytics image")
