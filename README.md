@@ -5,6 +5,22 @@
 
 This is a module of [Bearsampp project](https://github.com/bearsampp/bearsampp) involving mailpit.
 
+## Building
+
+This module supports both Ant and Gradle build systems:
+
+### Gradle (Recommended)
+```bash
+gradle releaseBuild
+```
+Interactive build with automatic version selection and download. Checks `bin/`, `bin/archived/`, releases.properties, and falls back to modules-untouched. See [.gradle-docs/](.gradle-docs/) for complete documentation.
+
+### Ant (Legacy)
+```bash
+ant release.build
+```
+Traditional build system. See [build.xml](build.xml) for details.
+
 ## Documentation and downloads
 
 https://bearsampp.com/module/mailpit
