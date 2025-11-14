@@ -1,4 +1,4 @@
- # 📚 Gradle Documentation Index
+# 📚 Gradle Documentation Index
 
 Welcome to the Gradle build system for module-mailpit! This index helps you find the right documentation for your needs.
 
@@ -111,9 +111,6 @@ Welcome to the Gradle build system for module-mailpit! This index helps you find
 - [GRADLE_CONVERSION_SUMMARY.md](GRADLE_CONVERSION_SUMMARY.md) - Summary
 - [GRADLE_COMPLETE.md](GRADLE_COMPLETE.md) - Final summary
 - [CONVERSION_CHECKLIST.md](CONVERSION_CHECKLIST.md) - Checklist
-
-### Legacy Files
-- [build.xml](build.xml) - Original Ant build (kept for compatibility)
 
 ## 📊 Documentation Statistics
 

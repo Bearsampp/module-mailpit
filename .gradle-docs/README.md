@@ -6,6 +6,7 @@ Welcome to the Gradle build documentation for module-mailpit!
 
 ### Quick Start
 - **[QUICK_START.md](QUICK_START.md)** - Get started in 2 minutes
+- **[PURE_GRADLE_BUILD.md](PURE_GRADLE_BUILD.md)** - Pure Gradle build overview
 
 ### Complete Guides
 - **[GRADLE_INDEX.md](GRADLE_INDEX.md)** - Documentation index and navigation
