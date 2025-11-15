@@ -2,442 +2,516 @@ plugins {
     id 'base'
 }
 
+// ============================================================================
+// PROJECT CONFIGURATION (adapted from Ghostscript module)
+// ============================================================================
+
 // Load build properties
 def buildProps = new Properties()
 file('build.properties').withInputStream { buildProps.load(it) }
 
-// Load releases properties
-def releasesProps = new Properties()
-file('releases.properties').withInputStream { releasesProps.load(it) }
+group = 'com.bearsampp.modules'
+version = buildProps.getProperty('bundle.release', '1.0.0')
+description = "Bearsampp Module - ${buildProps.getProperty('bundle.name', 'mailpit')}"
 
-// Project properties
 ext {
-    bundleName = buildProps.getProperty('bundle.name')
-    bundleRelease = buildProps.getProperty('bundle.release')
-    bundleType = buildProps.getProperty('bundle.type')
-    bundleFormat = buildProps.getProperty('bundle.format')
-    
-    // Determine build path - keep as File object like Bruno's ANT location property
-    def buildPathStr = buildProps.getProperty('build.path') ?: System.getenv('BEARSAMPP_BUILD_PATH')
-    buildPathFile = buildPathStr ? file(buildPathStr) : file('../bearsampp-build')
-    
-    // Derived paths
-    rootDir = file('..')
-    devPath = new File(rootDir, 'dev')
-    
-    // Bundle paths as File objects
-    bundleTmpPath = new File(buildPathFile, 'tmp')
-    bundleTmpPrepPath = new File(bundleTmpPath, 'prep')
+    projectBasedir = projectDir.absolutePath
+    rootDir = projectDir.parent
+    devPath = file("${rootDir}/dev").absolutePath
+
+    // Bundle properties
+    bundleName = buildProps.getProperty('bundle.name', 'mailpit')
+    bundleRelease = buildProps.getProperty('bundle.release', '1.0.0')
+    bundleType = buildProps.getProperty('bundle.type', 'tools')
+    bundleFormat = buildProps.getProperty('bundle.format', '7z')
+
+    // Build path resolution (properties -> env -> default)
+    def buildPathFromProps = buildProps.getProperty('build.path', '').trim()
+    def buildPathFromEnv = System.getenv('BEARSAMPP_BUILD_PATH') ?: ''
+    def defaultBuildPath = "${rootDir}/bearsampp-build"
+    buildBasePath = buildPathFromProps ?: (buildPathFromEnv ?: defaultBuildPath)
+
+    // Shared tmp structure
+    buildTmpPath = file("${buildBasePath}/tmp").absolutePath
+    bundleTmpBuildPath = file("${buildTmpPath}/bundles_build/${bundleType}/${bundleName}").absolutePath
+    bundleTmpPrepPath = file("${buildTmpPath}/bundles_prep/${bundleType}/${bundleName}").absolutePath
+    bundleTmpSrcPath = file("${buildTmpPath}/bundles_src").absolutePath
+    bundleTmpDownloadPath = file("${buildTmpPath}/downloads/${bundleName}").absolutePath
+    bundleTmpExtractPath = file("${buildTmpPath}/extract/${bundleName}").absolutePath
 }
 
-// Helper function to generate hash files
-def generateHashFiles(File file) {
-    if (!file.exists()) {
-        throw new GradleException("File not found for hashing: ${file}")
+repositories { mavenCentral() }
+
+// Verify dev path exists
+if (!file(ext.devPath).exists()) {
+    throw new GradleException("Dev path not found: ${ext.devPath}. Please ensure the 'dev' project exists in ${ext.rootDir}")
+}
+
+// ============================================================================
+// HELPER FUNCTIONS (adapted for Mailpit)
+// ============================================================================
+
+def find7ZipExecutable() {
+    def sevenZipHome = System.getenv('7Z_HOME')
+    if (sevenZipHome) {
+        def exe = file("${sevenZipHome}/7z.exe")
+        if (exe.exists()) return exe.absolutePath
     }
-
-    // Generate MD5
-    def md5File = new File("${file.absolutePath}.md5")
-    def md5Hash = calculateHash(file, 'MD5')
-    md5File.text = "${md5Hash}  ${file.name}\n"
-    println "  Created: ${md5File.name}"
-
-    // Generate SHA1
-    def sha1File = new File("${file.absolutePath}.sha1")
-    def sha1Hash = calculateHash(file, 'SHA-1')
-    sha1File.text = "${sha1Hash}  ${file.name}\n"
-    println "  Created: ${sha1File.name}"
-
-    // Generate SHA256
-    def sha256File = new File("${file.absolutePath}.sha256")
-    def sha256Hash = calculateHash(file, 'SHA-256')
-    sha256File.text = "${sha256Hash}  ${file.name}\n"
-    println "  Created: ${sha256File.name}"
-
-    // Generate SHA512
-    def sha512File = new File("${file.absolutePath}.sha512")
-    def sha512Hash = calculateHash(file, 'SHA-512')
-    sha512File.text = "${sha512Hash}  ${file.name}\n"
-    println "  Created: ${sha512File.name}"
+    def common = [
+        'C:/Program Files/7-Zip/7z.exe',
+        'C:/Program Files (x86)/7-Zip/7z.exe',
+        'D:/Program Files/7-Zip/7z.exe',
+        'D:/Program Files (x86)/7-Zip/7z.exe'
+    ]
+    for (p in common) { if (file(p).exists()) return file(p).absolutePath }
+    try {
+        def proc = ['where', '7z.exe'].execute(); proc.waitFor()
+        if (proc.exitValue() == 0) {
+            def out = proc.text.trim(); if (out) return out.split('\n')[0].trim()
+        }
+    } catch (Exception ignored) {}
+    return null
 }
 
-// Helper function to calculate hash
 def calculateHash(File file, String algorithm) {
     def digest = java.security.MessageDigest.getInstance(algorithm)
     file.withInputStream { stream ->
         def buffer = new byte[8192]
-        def bytesRead
-        while ((bytesRead = stream.read(buffer)) != -1) {
-            digest.update(buffer, 0, bytesRead)
-        }
+        def read
+        while ((read = stream.read(buffer)) != -1) { digest.update(buffer, 0, read) }
     }
     return digest.digest().collect { String.format('%02x', it) }.join('')
 }
 
-// Verify dev project exists
-task verifyDevProject {
-    doLast {
-        def devDir = file(devPath)
-        if (!devDir.exists()) {
-            throw new GradleException("Project 'dev' not found in ${devPath}")
+def generateHashFiles(File file) {
+    if (!file.exists()) throw new GradleException("File not found for hashing: ${file}")
+    new File("${file.absolutePath}.md5").text = "${calculateHash(file, 'MD5')} ${file.name}\n"
+    println "  Created: ${file.name}.md5"
+    new File("${file.absolutePath}.sha1").text = "${calculateHash(file, 'SHA-1')} ${file.name}\n"
+    println "  Created: ${file.name}.sha1"
+    new File("${file.absolutePath}.sha256").text = "${calculateHash(file, 'SHA-256')} ${file.name}\n"
+    println "  Created: ${file.name}.sha256"
+    new File("${file.absolutePath}.sha512").text = "${calculateHash(file, 'SHA-512')} ${file.name}\n"
+    println "  Created: ${file.name}.sha512"
+}
+
+def getAvailableVersions() {
+    def versions = []
+    def binDir = file("${projectDir}/bin")
+    if (binDir.exists()) {
+        versions.addAll(binDir.listFiles()?.findAll { it.isDirectory() && it.name.startsWith(bundleName) && it.name != 'archived' }?.collect { it.name.replace(bundleName, '') } ?: [])
+    }
+    def archivedDir = file("${projectDir}/bin/archived")
+    if (archivedDir.exists()) {
+        versions.addAll(archivedDir.listFiles()?.findAll { it.isDirectory() && it.name.startsWith(bundleName) }?.collect { it.name.replace(bundleName, '') } ?: [])
+    }
+    return versions.unique().sort()
+}
+
+def getModuleUntouched(String name, String version) {
+    def modulesUntouchedPath = file("${rootDir}/modules-untouched")
+    if (modulesUntouchedPath.exists()) {
+        def untouchedModulePath = file("${modulesUntouchedPath}/${name}/${name}${version}")
+        if (untouchedModulePath.exists()) {
+            def exe = file("${untouchedModulePath}/mailpit.exe")
+            if (exe.exists()) { println "Found untouched module locally: ${untouchedModulePath}"; return untouchedModulePath }
+            // sometimes inside a bin subdirectory
+            exe = file("${untouchedModulePath}/bin/mailpit.exe")
+            if (exe.exists()) { println "Found untouched module locally: ${untouchedModulePath}"; return untouchedModulePath }
         }
-        logger.lifecycle("Bearsampp dev found in ${devPath}")
+    }
+    println "Module not found locally, checking remote properties..."
+    def remoteUrl = getModuleUntouchedRemoteUrl(name, version)
+    if (remoteUrl) return downloadAndExtractFromUrl(remoteUrl, version, name)
+    return null
+}
+
+def getModuleUntouchedRemoteUrl(String name, String version) {
+    def propertiesUrl = "https://raw.githubusercontent.com/Bearsampp/modules-untouched/main/modules/${name}.properties"
+    try {
+        println "  Checking: ${propertiesUrl}"
+        def tempPropsFile = file("${bundleTmpDownloadPath}/${name}-untouched.properties")
+        tempPropsFile.parentFile.mkdirs()
+        ant.get(src: propertiesUrl, dest: tempPropsFile, verbose: false, ignoreerrors: true)
+        if (tempPropsFile.exists() && tempPropsFile.length() > 0) {
+            def props = new Properties(); tempPropsFile.withInputStream { props.load(it) }
+            def url = props.getProperty(version); tempPropsFile.delete();
+            if (url) { println "  Found version ${version} in remote properties"; return url }
+            else println "  Version ${version} not found in remote properties"
+        } else println "  Remote properties file not found or empty"
+    } catch (Exception e) { println "  Could not access remote properties: ${e.message}" }
+    return null
+}
+
+def findMailpitDirectory(File extractPath) {
+    // Typical layout: mailpit.exe at root of extracted dir
+    if (file("${extractPath}/mailpit.exe").exists()) return extractPath
+    // Search top-level dirs
+    def dirs = extractPath.listFiles()?.findAll { it.isDirectory() } ?: []
+    for (d in dirs) {
+        if (file("${d}/mailpit.exe").exists()) return d
+        def subdirs = d.listFiles()?.findAll { it.isDirectory() } ?: []
+        for (sd in subdirs) { if (file("${sd}/mailpit.exe").exists()) return sd }
+    }
+    return null
+}
+
+def downloadAndExtractFromUrl(String downloadUrl, String version, String name) {
+    println "  Downloading from: ${downloadUrl}"
+    def filename = downloadUrl.substring(downloadUrl.lastIndexOf('/') + 1)
+    def downloadDir = file(bundleTmpDownloadPath); def extractDir = file(bundleTmpExtractPath)
+    downloadDir.mkdirs(); extractDir.mkdirs()
+    def downloadedFile = file("${downloadDir}/${filename}")
+    if (!downloadedFile.exists()) { println "  Downloading to: ${downloadedFile}"; ant.get(src: downloadUrl, dest: downloadedFile, verbose: true) } else { println "  Using cached file: ${downloadedFile}" }
+    println "  Extracting archive..."
+    def extractPath = file("${extractDir}/${version}"); if (extractPath.exists()) { delete extractPath }; extractPath.mkdirs()
+    if (filename.endsWith('.7z')) {
+        def sevenZipPath = find7ZipExecutable(); if (!sevenZipPath) throw new GradleException('7zip not found. Please install 7zip.')
+        def command = [sevenZipPath.toString(), 'x', downloadedFile.absolutePath.toString(), "-o${extractPath.absolutePath}".toString(), '-y']
+        def process = new ProcessBuilder(command as String[]).directory(extractPath).redirectErrorStream(true).start()
+        process.inputStream.eachLine { if (it.trim()) println "    ${it}" }
+        if (process.waitFor() != 0) throw new GradleException('7zip extraction failed')
+    } else if (filename.endsWith('.zip')) { copy { from zipTree(downloadedFile); into extractPath } }
+    else { throw new GradleException("Unsupported archive format: ${filename}") }
+    println "  Extraction complete"
+    def moduleDir = findMailpitDirectory(extractPath)
+    if (!moduleDir) throw new GradleException("Could not find ${name} directory in extracted files")
+    println "  Found ${name} directory: ${moduleDir.name}"
+    return moduleDir
+}
+
+def downloadAndExtractMailpit(String version) {
+    def untouched = getModuleUntouched(bundleName, version)
+    if (untouched) { println "Using untouched module from modules-untouched"; return untouched }
+    println "Module not found in modules-untouched, downloading from releases.properties...\n"
+    def releasesFile = file('releases.properties'); if (!releasesFile.exists()) throw new GradleException('releases.properties not found')
+    def releases = new Properties(); releasesFile.withInputStream { releases.load(it) }
+    def downloadUrl = releases.getProperty(version)
+    if (!downloadUrl) throw new GradleException("Version ${version} not found in releases.properties or modules-untouched repository")
+    println "Downloading Mailpit ${version} from:\n  ${downloadUrl}"
+    return downloadAndExtractFromUrl(downloadUrl, version, bundleName)
+}
+
+// ============================================================================
+// TASKS (mirroring Ghostscript build)
+// ============================================================================
+
+tasks.register('info') {
+    group = 'help'; description = 'Display build configuration information'
+    def projectName = project.name
+    def projectVersion = project.version
+    def projectDescription = project.description
+    def projectBasedirValue = projectBasedir
+    def rootDirValue = rootDir
+    def devPathValue = devPath
+    def bundleNameValue = bundleName
+    def bundleReleaseValue = bundleRelease
+    def bundleTypeValue = bundleType
+    def bundleFormatValue = bundleFormat
+    def buildBasePathValue = buildBasePath
+    def buildTmpPathValue = buildTmpPath
+    def bundleTmpPrepPathValue = bundleTmpPrepPath
+    def bundleTmpBuildPathValue = bundleTmpBuildPath
+    def bundleTmpSrcPathValue = bundleTmpSrcPath
+    def bundleTmpDownloadPathValue = bundleTmpDownloadPath
+    def bundleTmpExtractPathValue = bundleTmpExtractPath
+    def javaVersion = JavaVersion.current(); def javaHome = System.getProperty('java.home')
+    def gradleVersion = gradle.gradleVersion; def gradleHome = gradle.gradleHomeDir
+    doLast {
+        println """
+        ================================================================
+                  Bearsampp Module Mailpit - Build Info
+        ================================================================
+
+        Project:        ${projectName}
+        Version:        ${projectVersion}
+        Description:    ${projectDescription}
+
+        Bundle Properties:
+          Name:         ${bundleNameValue}
+          Release:      ${bundleReleaseValue}
+          Type:         ${bundleTypeValue}
+          Format:       ${bundleFormatValue}
+
+        Paths:
+          Project Dir:  ${projectBasedirValue}
+          Root Dir:     ${rootDirValue}
+          Dev Path:     ${devPathValue}
+          Build Base:   ${buildBasePathValue}
+          Build Tmp:    ${buildTmpPathValue}
+          Tmp Prep:     ${bundleTmpPrepPathValue}
+          Tmp Build:    ${bundleTmpBuildPathValue}
+          Tmp Src:      ${bundleTmpSrcPathValue}
+          Tmp Download: ${bundleTmpDownloadPathValue}
+          Tmp Extract:  ${bundleTmpExtractPathValue}
+
+        Java:
+          Version:      ${javaVersion}
+          Home:         ${javaHome}
+
+        Gradle:
+          Version:      ${gradleVersion}
+          Home:         ${gradleHome}
+
+        Quick Start:
+          gradle tasks                              - List all available tasks
+          gradle info                               - Show this information
+          gradle release -PbundleVersion=1.27.10    - Build specific version
+          gradle releaseAll                         - Build all versions
+          gradle clean                              - Clean build artifacts
+          gradle verify                             - Verify build environment
+        """.stripIndent()
     }
 }
 
-// Interactive version selection task
-task selectVersion {
+tasks.register('release') {
+    group = 'build'; description = 'Build release package for a specific version (use -PbundleVersion=X.X.X or run interactively)'
+    def versionProperty = project.findProperty('bundleVersion')
     doLast {
-        println "\n=== Bearsampp Module Builder - ${bundleName} ==="
-        println "Available versions:"
-        println "=" * 60
-        
-        // Collect versions from releases.properties
-        def releasesVersions = releasesProps.keySet() as Set
-        
-        // Collect versions from bin/ directory
-        def binVersions = [] as Set
-        def binDir = file('bin')
-        if (binDir.exists() && binDir.isDirectory()) {
-            binDir.listFiles().each { dir ->
-                if (dir.isDirectory()) {
-                    def dirName = dir.name
-                    if (dirName.startsWith(bundleName)) {
-                        def version = dirName.substring(bundleName.length())
-                        binVersions.add(version)
-                    }
-                }
+        def versionToBuild = versionProperty
+        if (!versionToBuild) {
+            def availableVersions = getAvailableVersions()
+            if (availableVersions.isEmpty()) throw new GradleException("No versions found in bin/ or bin/archived/ directory")
+            println ""; println "=".multiply(70); println "Interactive Release Mode"; println "=".multiply(70); println ""
+            println "Available versions:"
+            def binDir = file("${projectDir}/bin"); def archivedDir = file("${projectDir}/bin/archived")
+            availableVersions.eachWithIndex { v, i ->
+                def location = ""; if (binDir.exists() && file("${binDir}/${bundleName}${v}").exists()) location = "[bin]"; else if (archivedDir.exists() && file("${archivedDir}/${bundleName}${v}").exists()) location = "[bin/archived]"
+                println "  ${(i+1).toString().padLeft(2)}. ${v.padRight(15)} ${location}"
             }
-        }
-        
-        // Collect versions from bin/archived/ directory
-        def archivedVersions = [] as Set
-        def archivedDir = file('bin/archived')
-        if (archivedDir.exists() && archivedDir.isDirectory()) {
-            archivedDir.listFiles().each { dir ->
-                if (dir.isDirectory()) {
-                    def dirName = dir.name
-                    if (dirName.startsWith(bundleName)) {
-                        def version = dirName.substring(bundleName.length())
-                        archivedVersions.add(version)
-                    }
-                }
-            }
-        }
-        
-        // Combine all versions
-        def allVersions = (releasesVersions + binVersions + archivedVersions) as Set
-        
-        // Sort versions numerically
-        def versions = allVersions.sort { a, b ->
-            def aParts = a.toString().split('\\.').collect { it.toInteger() }
-            def bParts = b.toString().split('\\.').collect { it.toInteger() }
-            for (int i = 0; i < Math.min(aParts.size(), bParts.size()); i++) {
-                if (aParts[i] != bParts[i]) {
-                    return aParts[i] <=> bParts[i]
-                }
-            }
-            return aParts.size() <=> bParts.size()
-        }
-        
-        versions.eachWithIndex { version, index ->
-            def path = ""
-            if (binVersions.contains(version)) {
-                path = "[bin]"
-            } else if (archivedVersions.contains(version)) {
-                path = "[bin/archived]"
-            } else if (releasesVersions.contains(version)) {
-                path = "[releases]"
-            }
-            println "${index + 1}. ${version} ${path}"
-        }
-        
-        // Check if version is specified via command line
-        def specifiedVersion = null
-        if (project.hasProperty('version')) {
-            def versionProp = project.property('version')
-            // Only use if it's not the default "unspecified" value
-            if (versionProp != null && versionProp != 'unspecified' && versionProp.toString().trim() != '') {
-                specifiedVersion = versionProp.toString()
-            }
-        }
-        
-        def selectedVersion
-        
-        if (specifiedVersion) {
-            // Version specified via -Pversion=X.X.X
-            selectedVersion = specifiedVersion
-            println "\nUsing specified version: ${selectedVersion}"
-        } else {
-            // Always prompt for version selection
-            println "\nEnter version number (or type version directly, or 'custom' for unlisted version): "
-            
+            println ""; println "Enter version to build (index or exact version):"; println ""
             def input
-            def console = System.console()
-            if (console != null) {
-                input = console.readLine()?.trim()
-            } else {
-                // Fallback to System.in when console is not available
-                def reader = new BufferedReader(new InputStreamReader(System.in))
-                input = reader.readLine()?.trim()
-            }
-            
-            if (!input) {
-                throw new GradleException("No version selected")
-            }
-            
-            if (input.isInteger()) {
-                def index = input.toInteger() - 1
-                if (index >= 0 && index < versions.size()) {
-                    selectedVersion = versions[index]
-                } else {
-                    throw new GradleException("Invalid selection: ${input}. Please enter a number between 1 and ${versions.size()}")
-                }
-            } else if (input.equalsIgnoreCase('custom')) {
-                println "Enter custom version: "
-                def customInput
-                if (console != null) {
-                    customInput = console.readLine()?.trim()
-                } else {
-                    def reader = new BufferedReader(new InputStreamReader(System.in))
-                    customInput = reader.readLine()?.trim()
-                }
-                if (!customInput) {
-                    throw new GradleException("No version entered")
-                }
-                selectedVersion = customInput
-            } else {
-                selectedVersion = input
-            }
-        }
-        
-        project.ext.selectedVersion = selectedVersion
-        println "\nSelected version: ${selectedVersion}"
-        
-        // Store for other tasks
-        project.ext.bundleVersion = selectedVersion
-        project.ext.bundleFolder = "${bundleName}${selectedVersion}"
-        
-        // Check if version exists in bin/ with actual mailpit.exe
-        def binPath = file("bin/${bundleFolder}")
-        def archivedPath = file("bin/archived/${bundleFolder}")
-        
-        if (binPath.exists() && file("${binPath}/mailpit.exe").exists()) {
-            // Use local version from bin/ if mailpit.exe exists
-            project.ext.bundlePath = "bin/${bundleFolder}"
-            project.ext.useLocalVersion = true
-            println "Using local version from: bin/${bundleFolder}"
-        } else {
-            // For archived or non-existent versions, download from remote
-            // But use archived path for overlay if it exists
-            if (archivedPath.exists()) {
-                project.ext.bundlePath = "bin/archived/${bundleFolder}"
-            } else {
-                project.ext.bundlePath = "bin/${bundleFolder}"
-            }
-            project.ext.useLocalVersion = false
-            println "Will download version from remote"
-        }
-    }
-}
-
-// Download and extract module
-task downloadModule(dependsOn: selectVersion) {
-    doLast {
-        def version = project.ext.selectedVersion
-        def bundlePath = project.ext.bundlePath
-        def useLocalVersion = project.ext.useLocalVersion
-        
-        // If using local version, just set the extracted path
-        if (useLocalVersion) {
-            def localDir = file(bundlePath)
-            def mailpitExe = new File(localDir, "mailpit.exe")
-            
-            if (!mailpitExe.exists()) {
-                throw new GradleException("mailpit.exe not found in local path: ${bundlePath}")
-            }
-            
-            println "Using local version, skipping download"
-            project.ext.extractedPath = localDir.absolutePath
-            return
-        }
-        
-        // Otherwise, download from remote
-        def downloadUrl = releasesProps.getProperty(version)
-        
-        if (!downloadUrl) {
-            println "\nVersion ${version} not found in releases.properties"
-            println "Checking modules-untouched repository..."
-            
-            // Construct URL from modules-untouched
-            def untouchedUrl = "https://raw.githubusercontent.com/Bearsampp/modules-untouched/main/modules/${bundleName}.properties"
-            
             try {
-                def untouchedProps = new Properties()
-                new URL(untouchedUrl).withInputStream { stream ->
-                    untouchedProps.load(stream)
-                }
-                
-                downloadUrl = untouchedProps.getProperty(version)
-                
-                if (!downloadUrl) {
-                    throw new GradleException("Version ${version} not found in modules-untouched repository either")
-                }
-                
-                println "Found in modules-untouched: ${downloadUrl}"
+                def reader = new BufferedReader(new InputStreamReader(System.in)); input = reader.readLine()
             } catch (Exception e) {
-                throw new GradleException("Failed to fetch from modules-untouched: ${e.message}")
-            }
-        }
-        
-        println "\nDownload URL: ${downloadUrl}"
-        
-        // Create temp directory
-        def tempDir = new File(bundleTmpPath, "download")
-        tempDir.mkdirs()
-        
-        // Extract version-specific download logic
-        def fileName = downloadUrl.substring(downloadUrl.lastIndexOf('/') + 1)
-        def downloadFile = new File(tempDir, fileName)
-        
-        println "Downloading to: ${downloadFile}"
-        
-        // Download file
-        ant.get(src: downloadUrl, dest: downloadFile, verbose: true)
-        
-        // Extract archive
-        def extractDir = new File(new File(bundleTmpPath, "extract"), bundleFolder)
-        extractDir.mkdirs()
-        
-        println "Extracting to: ${extractDir}"
-        
-        if (fileName.endsWith('.7z')) {
-            // Use 7z to extract
-            def result = "7z x \"${downloadFile.absolutePath}\" -o\"${extractDir.absolutePath}\" -y".execute()
-            result.waitFor()
-            if (result.exitValue() != 0) {
-                throw new GradleException("Failed to extract 7z archive: ${result.err.text}")
-            }
-        } else if (fileName.endsWith('.zip')) {
-            ant.unzip(src: downloadFile, dest: extractDir)
-        }
-        
-        // Find the mailpit.exe in extracted content
-        def mailpitExe = fileTree(extractDir).matching {
-            include '**/mailpit.exe'
-        }.files.first()
-        
-        if (!mailpitExe) {
-            throw new GradleException("mailpit.exe not found in extracted archive")
-        }
-        
-        println "Found mailpit.exe at: ${mailpitExe}"
-        
-        // Store extraction path for next task
-        project.ext.extractedPath = mailpitExe.parentFile.absolutePath
-    }
-}
+                throw new GradleException("""
+                    Failed to read input. Please use non-interactive mode:
+                      gradle release -PbundleVersion=X.X.X
 
-// Prepare bundle
-task prepareBundle(dependsOn: downloadModule) {
-    doLast {
-        def bundleFolder = project.ext.bundleFolder
-        def bundlePath = project.ext.bundlePath
-        def extractedPath = project.ext.extractedPath
-        
-        // Verify mailpit.exe exists
-        def mailpitExe = new File(extractedPath, "mailpit.exe")
-        if (!mailpitExe.exists()) {
-            throw new GradleException("mailpit.exe not found at ${mailpitExe}")
-        }
-        
-        // Create prep directory
-        def prepDir = new File(bundleTmpPrepPath, bundleFolder)
-        prepDir.deleteDir()
-        prepDir.mkdirs()
-        
-        println "Preparing bundle in: ${prepDir}"
-        
-        // Copy from extracted source (excluding doc)
-        copy {
-            from extractedPath
-            into prepDir
-            exclude 'doc/**'
-        }
-        
-        // Copy from bundle path (overlay with module-specific files)
-        def bundleDir = file(bundlePath)
-        if (bundleDir.exists()) {
-            copy {
-                from bundleDir
-                into prepDir
+                    Available versions: ${availableVersions.join(', ')}
+                """.stripIndent())
             }
+            if (!input || input.trim().isEmpty()) throw new GradleException("""
+                    No version selected. Please use non-interactive mode:
+                      gradle release -PbundleVersion=X.X.X
+
+                    Available versions: ${availableVersions.join(', ')}
+                """.stripIndent())
+            versionToBuild = input.trim()
+            if (versionToBuild ==~ /\d+/) {
+                def idx = Integer.parseInt(versionToBuild)
+                if (idx >= 1 && idx <= availableVersions.size()) versionToBuild = availableVersions[idx - 1]
+                else throw new GradleException("""
+                        Invalid selection: ${input}
+
+                        Please enter a number between 1 and ${availableVersions.size()} or one of the exact versions below:
+                        ${availableVersions.collect { "  - ${it}" }.join('\n')}
+                    """.stripIndent())
+            } else {
+                if (!availableVersions.contains(versionToBuild)) throw new GradleException("""
+                        Invalid version: ${versionToBuild}
+
+                        Please choose from available versions:
+                        ${availableVersions.collect { "  - ${it}" }.join('\n')}
+                    """.stripIndent())
+            }
+            println ""; println "Selected version: ${versionToBuild}"
+        }
+
+        println ""; println "=".multiply(70); println "Building ${bundleName} ${versionToBuild}"; println "=".multiply(70); println ""
+
+        def bundlePath = file("${projectDir}/bin/${bundleName}${versionToBuild}")
+        if (!bundlePath.exists()) {
+            def archivedCandidate = file("${projectDir}/bin/archived/${bundleName}${versionToBuild}")
+            if (archivedCandidate.exists()) bundlePath = archivedCandidate else println "No local bundle found in bin/ or bin/archived/. Will download sources."
+        }
+        if (bundlePath?.exists()) println "Bundle path: ${bundlePath}"; println ""
+
+        def bundleVersion = bundlePath?.exists() ? bundlePath.name.replace(bundleName, '') : versionToBuild
+        def bundleSrcDest = bundlePath; def bundleSrcFinal = bundleSrcDest
+
+        def mailpitExe = bundleSrcFinal ? file("${bundleSrcFinal}/mailpit.exe") : file('NUL')
+        def hasMailpit = bundleSrcFinal && mailpitExe.exists()
+        if (!hasMailpit) {
+            def tmpExtractPath = file("${bundleTmpExtractPath}/${bundleVersion}")
+            def tmpMailpitDir = findMailpitDirectory(tmpExtractPath)
+            if (tmpMailpitDir && tmpMailpitDir.exists()) { println "Using cached Mailpit binaries from bearsampp-build/tmp"; bundleSrcFinal = tmpMailpitDir }
+            else {
+                println "\nMailpit binaries not found\nDownloading Mailpit ${bundleVersion}...\n"
+                try { bundleSrcFinal = downloadAndExtractMailpit(bundleVersion) }
+                catch (Exception e) {
+                    throw new GradleException("""
+                        Failed to download Mailpit binaries: ${e.message}
+
+                        You can manually download and extract Mailpit binaries to:
+                          ${bundleSrcDest}/
+
+                        Or check that version ${bundleVersion} exists in releases.properties
+                    """.stripIndent())
+                }
+            }
+        }
+
+        mailpitExe = file("${bundleSrcFinal}/mailpit.exe")
+        if (!mailpitExe.exists()) throw new GradleException("mailpit.exe not found in ${bundleSrcFinal}/")
+
+        println "Source folder: ${bundleSrcFinal}"; println ""
+
+        def prepPath = file("${bundleTmpPrepPath}/${bundleName}${bundleVersion}")
+        if (prepPath.exists()) delete prepPath; prepPath.mkdirs()
+
+        println "Copying Mailpit files..."
+        copy { from bundleSrcFinal; into prepPath; exclude 'doc/**' }
+
+        if (bundleSrcDest?.exists()) {
+            println "Copying configuration files..."
+            copy { from bundleSrcDest; into prepPath; include 'bearsampp.conf' }
         } else {
-            println "Warning: Bundle path ${bundlePath} does not exist, skipping overlay"
+            println "No local config directory for ${bundleName}${bundleVersion}; skipping config file copy."
         }
-        
-        println "Bundle prepared successfully"
-    }
-}
 
-// Create release archive
-task createRelease(dependsOn: prepareBundle) {
-    doLast {
-        def bundleFolder = project.ext.bundleFolder
-        def prepDir = new File(bundleTmpPrepPath, bundleFolder)
-        
-        // Create release directory: buildPath/{bundleType}/{bundleName}/{bundleRelease}
-        def releaseDir = new File(new File(new File(buildPathFile, bundleType), bundleName), bundleRelease)
-        releaseDir.mkdirs()
-        
-        def archiveName = "bearsampp-${bundleName}-${project.ext.selectedVersion}-${bundleRelease}.${bundleFormat}"
-        def archiveFile = new File(releaseDir, archiveName)
-        
-        println "Creating release archive: ${archiveFile}"
-        
+        println ""; println "Copying to bundles_build directory..."
+        def buildPathDir = file("${bundleTmpBuildPath}/${bundleName}${bundleVersion}")
+        if (buildPathDir.exists()) delete buildPathDir; buildPathDir.mkdirs()
+        copy { from prepPath; into buildPathDir }
+        println "Non-zip version available at: ${buildPathDir}"
+
+        println ""; println "Preparing archive..."
+        def buildPath = file(buildBasePath)
+        def buildBinsPath = file("${buildPath}/${bundleType}/${bundleName}/${bundleRelease}"); buildBinsPath.mkdirs()
+        def destFile = file("${buildBinsPath}/bearsampp-${bundleName}-${bundleVersion}-${bundleRelease}")
         if (bundleFormat == '7z') {
-            def result = "7z a -t7z -mx9 \"${archiveFile.absolutePath}\" \"${prepDir.absolutePath}\\*\"".execute()
-            result.waitFor()
-            if (result.exitValue() != 0) {
-                throw new GradleException("Failed to create 7z archive: ${result.err.text}")
-            }
-        } else if (bundleFormat == 'zip') {
-            ant.zip(destfile: archiveFile, basedir: prepDir)
+            def archiveFile = file("${destFile}.7z"); if (archiveFile.exists()) delete archiveFile
+            println "Compressing ${bundleName}${bundleVersion} to ${archiveFile.name}..."
+            def sevenZipExe = find7ZipExecutable(); if (!sevenZipExe) throw new GradleException('7-Zip not found. Please install 7-Zip or set 7Z_HOME environment variable.')
+            println "Using 7-Zip: ${sevenZipExe}"
+            def command = [sevenZipExe, 'a', '-t7z', archiveFile.absolutePath.toString(), '.']
+            def process = new ProcessBuilder(command as String[]).directory(prepPath).redirectErrorStream(true).start()
+            process.inputStream.eachLine { if (it.trim()) println "  ${it}" }
+            def exitCode = process.waitFor(); if (exitCode != 0) throw new GradleException("7zip compression failed with exit code: ${exitCode}")
+            println "Archive created: ${archiveFile}"; println "Generating hash files..."; generateHashFiles(archiveFile)
+        } else {
+            def archiveFile = file("${destFile}.zip"); if (archiveFile.exists()) delete archiveFile
+            println "Compressing ${bundleName}${bundleVersion} to ${archiveFile.name}..."; ant.zip(destfile: archiveFile, basedir: prepPath)
+            println "Archive created: ${archiveFile}"; println "Generating hash files..."; generateHashFiles(archiveFile)
         }
-        
-        // Generate checksums
-        println "Generating checksums..."
-        generateHashFiles(archiveFile)
-        
-        println "\n" + "=" * 60
-        println "Release created successfully!"
-        println "Archive: ${archiveFile}"
-        println "Size: ${String.format('%.2f MB', archiveFile.length() / 1024 / 1024)}"
-        println "Checksums: MD5, SHA1, SHA256, SHA512"
-        println "=" * 60
+
+        println ""; println "=".multiply(70); println "[SUCCESS] Release build completed successfully for version ${versionToBuild}"; println "Output directory: ${buildBinsPath}"; println "Archive: ${destFile}.${bundleFormat}"; println "=".multiply(70)
     }
 }
 
-// Main build task
-task releaseBuild {
-    dependsOn verifyDevProject, createRelease
-    group = 'build'
-    description = 'Build a release bundle for the selected version'
+tasks.register('releaseAll') {
+    group = 'build'; description = 'Build release packages for all available versions in bin/ and bin/archived/ directories'
+    doLast {
+        def versions = getAvailableVersions(); if (versions.isEmpty()) throw new GradleException('No versions found in bin/ or bin/archived/ directory')
+        println ""; println "=".multiply(70); println "Building releases for ${versions.size()} ${bundleName} versions"; println "=".multiply(70); println ""
+        def successCount = 0; def failed = []
+        versions.each { v ->
+            println "=".multiply(70); println "[${successCount + 1}/${versions.size()}] Building ${bundleName} ${v}..."; println "=".multiply(70)
+            try {
+                def bundlePath = file("${projectDir}/bin/${bundleName}${v}"); if (!bundlePath.exists()) { def b2 = file("${projectDir}/bin/archived/${bundleName}${v}"); if (b2.exists()) bundlePath = b2 else throw new GradleException("Bundle path not found: ${bundlePath}") }
+                println "Bundle path: ${bundlePath}"; println ""
+                def bundleFolder = bundlePath.name; def bundleVersion = bundleFolder.replace(bundleName, '')
+                def bundleSrcDest = bundlePath; def bundleSrcFinal = bundleSrcDest
+                def mailpitExe = file("${bundleSrcFinal}/mailpit.exe"); if (!mailpitExe.exists()) {
+                    def tmpExtractPath = file("${bundleTmpExtractPath}/${bundleVersion}"); def tmpMailpitDir = findMailpitDirectory(tmpExtractPath)
+                    bundleSrcFinal = (tmpMailpitDir && tmpMailpitDir.exists()) ? tmpMailpitDir : downloadAndExtractMailpit(bundleVersion)
+                }
+                mailpitExe = file("${bundleSrcFinal}/mailpit.exe"); if (!mailpitExe.exists()) throw new GradleException("mailpit.exe not found at ${mailpitExe}")
+                println "Source folder: ${bundleSrcFinal}"; println ""
+                def prepPath = file("${bundleTmpPrepPath}/${bundleName}${bundleVersion}"); if (prepPath.exists()) delete prepPath; prepPath.mkdirs()
+                println "Copying Mailpit files..."; copy { from bundleSrcFinal; into prepPath; exclude 'doc/**' }
+                copy { from bundleSrcDest; into prepPath; include 'bearsampp.conf' }
+                println ""; println "Copying to bundles_build directory..."
+                def buildPathDir = file("${bundleTmpBuildPath}/${bundleName}${bundleVersion}"); if (buildPathDir.exists()) delete buildPathDir; buildPathDir.mkdirs(); copy { from prepPath; into buildPathDir }; println "Non-zip version available at: ${buildPathDir}"
+                def buildPath = file(buildBasePath); def buildBinsPath = file("${buildPath}/${bundleType}/${bundleName}/${bundleRelease}"); buildBinsPath.mkdirs(); def destFile = file("${buildBinsPath}/bearsampp-${bundleName}-${bundleVersion}-${bundleRelease}")
+                if (bundleFormat == '7z') { def archiveFile = file("${destFile}.7z"); if (archiveFile.exists()) delete archiveFile; def sevenZipExe = find7ZipExecutable(); if (!sevenZipExe) throw new GradleException('7-Zip not found'); def command = [sevenZipExe, 'a', '-t7z', archiveFile.absolutePath.toString(), '.']; def process = new ProcessBuilder(command as String[]).directory(prepPath).redirectErrorStream(true).start(); process.inputStream.eachLine { if (it.trim()) println "  ${it}" }; if (process.waitFor() != 0) throw new GradleException('7zip compression failed'); generateHashFiles(archiveFile) }
+                else { def archiveFile = file("${destFile}.zip"); if (archiveFile.exists()) delete archiveFile; ant.zip(destfile: archiveFile, basedir: prepPath); generateHashFiles(archiveFile) }
+                println ""; println "[SUCCESS] ${bundleName} ${v} completed"; println "Output: ${file("${buildBasePath}/${bundleType}/${bundleName}/${bundleRelease}")}"; successCount++
+            } catch (Exception e) { println ""; println "[FAILED] ${bundleName} ${v}: ${e.message}"; failed.add(v) }
+            println ""
+        }
+        println "=".multiply(70); println 'Build Summary'; println "=".multiply(70); println "Total versions: ${versions.size()}"; println "Successful:     ${successCount}"; println "Failed:         ${failed.size()}"
+        if (!failed.isEmpty()) { println "\nFailed versions:"; failed.each { println "  - ${it}" } }
+        println "=".multiply(70)
+        if (!failed.isEmpty()) throw new GradleException("${failed.size()} version(s) failed to build") else println "[SUCCESS] All versions built successfully!"
+    }
 }
 
-// Alias for Bruno's method compatibility
-task release {
-    dependsOn releaseBuild
-    group = 'build'
-    description = 'Alias for releaseBuild (Bruno\'s method compatibility)'
+tasks.named('clean') {
+    group = 'build'; description = 'Clean build artifacts and temporary files'
+    doLast {
+        def buildDir = file("${projectDir}/build"); if (buildDir.exists()) { delete buildDir }
+        println "[SUCCESS] Build artifacts cleaned"
+    }
 }
 
-// Clean task
-task cleanBuild(type: Delete) {
-    delete "${bundleTmpPath}"
-    group = 'build'
-    description = 'Clean temporary build files'
+tasks.register('verify') {
+    group = 'verification'; description = 'Verify build environment and dependencies'
+    doLast {
+        println 'Verifying build environment for module-mailpit...'
+        def checks = [:]
+        checks['Java 8+'] = JavaVersion.current() >= JavaVersion.VERSION_1_8
+        checks['build.properties'] = file('build.properties').exists()
+        checks['releases.properties'] = file('releases.properties').exists()
+        checks['dev directory'] = file(devPath).exists()
+        checks['bin directory'] = file("${projectDir}/bin").exists()
+        checks['bin/archived directory'] = file("${projectDir}/bin/archived").exists()
+        if (bundleFormat == '7z') { checks['7-Zip'] = find7ZipExecutable() != null }
+        println "\nEnvironment Check Results:"; println "-".multiply(60)
+        checks.each { n, ok -> println "  ${ok ? '[PASS]'.padRight(10) : '[FAIL]'.padRight(10)} ${n}" }
+        println "-".multiply(60)
+        if (checks.values().every { it }) {
+            println "\n[SUCCESS] All checks passed! Build environment is ready."
+            println "\nYou can now run:"; println "  gradle release -PbundleVersion=1.27.10   - Build release for version"; println "  gradle listVersions                      - List available versions"
+        } else { println "\n[WARNING] Some checks failed. Please review the requirements."; throw new GradleException('Build environment verification failed') }
+    }
 }
 
-// Default task
-defaultTasks 'releaseBuild'
+tasks.register('listReleases') {
+    group = 'help'; description = 'List all available releases from releases.properties'
+    doLast {
+        def releasesFile = file('releases.properties'); if (!releasesFile.exists()) { println 'releases.properties not found'; return }
+        def releases = new Properties(); releasesFile.withInputStream { releases.load(it) }
+        println "\nAvailable Mailpit Releases:"; println "-".multiply(80)
+        releases.sort { it.key }.each { version, url -> println "  ${version.padRight(10)} -> ${url}" }
+        println "-".multiply(80); println "Total releases: ${releases.size()}"
+    }
+}
+
+tasks.register('listVersions') {
+    group = 'help'; description = 'List all available bundle versions in bin/ and bin/archived/ directories'
+    doLast {
+        def versions = getAvailableVersions(); if (versions.isEmpty()) { println "\nNo versions found in bin/ or bin/archived/ directories"; return }
+        println "\nAvailable ${bundleName} versions:"; println "-".multiply(60)
+        def binDir = file("${projectDir}/bin"); def archivedDir = file("${projectDir}/bin/archived")
+        versions.each { v ->
+            def location = ""; if (binDir.exists() && file("${binDir}/${bundleName}${v}").exists()) location = '[bin]' else if (archivedDir.exists() && file("${archivedDir}/${bundleName}${v}").exists()) location = '[bin/archived]'
+            println "  ${v.padRight(15)} ${location}"
+        }
+        println "-".multiply(60); println "Total versions: ${versions.size()}"
+        if (!versions.isEmpty()) { println "\nTo build a specific version:"; println "  gradle release -PbundleVersion=${versions.last()}" }
+    }
+}
+
+tasks.register('validateProperties') {
+    group = 'verification'; description = 'Validate build.properties configuration'
+    doLast {
+        println 'Validating build.properties...'
+        def required = ['bundle.name', 'bundle.release', 'bundle.type', 'bundle.format']
+        def missing = []
+        required.each { if (!buildProps.containsKey(it) || buildProps.getProperty(it).trim().isEmpty()) missing.add(it) }
+        if (missing.isEmpty()) { println '[SUCCESS] All required properties are present:'; required.each { println "    ${it} = ${buildProps.getProperty(it)}" } }
+        else { println '[ERROR] Missing required properties:'; missing.each { println "    - ${it}" }; throw new GradleException('build.properties validation failed') }
+    }
+}
+
+gradle.taskGraph.whenReady { graph ->
+    println """
+    ================================================================
+      Bearsampp Module Mailpit - Gradle Build
+    ================================================================
+    """.stripIndent()
+}
+
+defaultTasks 'info'
