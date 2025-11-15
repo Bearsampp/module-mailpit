@@ -17,5 +17,7 @@
 /.qodo
 
 # Gradle
-/.gradle
-/build
+.gradle/
+build/
+gradle-app.setting
+.gradletasknamecache
