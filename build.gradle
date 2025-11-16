@@ -750,13 +750,16 @@ tasks.register('release') {
             println "Compressing ${bundleName}${bundleVersion} to ${archiveFile.name}..."
 
             // Create 7z archive
+            // Important: add the directory itself (no wildcard) so the
+            // top-level version folder (e.g., mailpit1.27.10/) is included
+            // in the archive, matching Ant behavior
             def command = [
                 sevenZipExe,
                 'a',
                 '-t7z',
                 '-mx9',
                 archiveFile.absolutePath,
-                "${mailpitPrepPath}/*"
+                mailpitPrepPath.absolutePath
             ]
 
             def process = command.execute()
@@ -772,8 +775,11 @@ tasks.register('release') {
             println "Compressing ${bundleName}${bundleVersion} to ${archiveFile.name}..."
 
             // Create ZIP archive using Gradle's built-in zip functionality
+            // Include the folder itself at archive root to match Ant behavior
             task("zipArchive_${bundleVersion}", type: Zip) {
-                from mailpitPrepPath
+                from(mailpitPrepPath) {
+                    into mailpitPrepPath.name
+                }
                 destinationDirectory = archiveFile.parentFile
                 archiveFileName = archiveFile.name
             }.execute()

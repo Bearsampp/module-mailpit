@@ -207,7 +207,18 @@ mailpit{version}/
 
 **7-Zip Command:**
 ```bash
-7z.exe a -t7z -mx9 {archiveFile} {prepPath}/*
+7z.exe a -t7z -mx9 {archiveFile} {prepPath}
+```
+
+Note: We add the prep directory itself (no wildcard) so the top-level version folder (for example, `mailpit1.27.10/`) is included inside the archive. This matches the original Ant behavior.
+
+**Archive contents (root of the archive):**
+```
+mailpit{version}/
+├── mailpit.exe
+├── LICENSE
+├── README.md
+└── bearsampp.conf
 ```
 
 ### 6. Hash File Generation
