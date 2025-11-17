@@ -6,19 +6,10 @@ This module uses a **100% pure Gradle build system** with complete feature parit
 
 ## 📚 Documentation Files
 
-### Quick Start
 - **[QUICK_START.md](QUICK_START.md)** - Get started in 2 minutes
-- **[PURE_GRADLE_BUILD.md](PURE_GRADLE_BUILD.md)** - Pure Gradle build overview
-
-### Complete Guides
 - **[GRADLE_INDEX.md](GRADLE_INDEX.md)** - Documentation index and navigation
-- **[GRADLE_COMPLETE.md](GRADLE_COMPLETE.md)** - Complete conversion summary
-- **[MIGRATION_NOTES.md](MIGRATION_NOTES.md)** - Ant to Gradle migration details
 - **[BUILD_FLOW.md](BUILD_FLOW.md)** - Visual diagrams and process flows
-
-### Reference
-- **[GRADLE_CONVERSION_SUMMARY.md](GRADLE_CONVERSION_SUMMARY.md)** - Feature summary
-- **[CONVERSION_CHECKLIST.md](CONVERSION_CHECKLIST.md)** - Task checklist
+- **[MIGRATION_NOTES.md](MIGRATION_NOTES.md)** - Ant to Gradle migration details
 
 ## 🚀 Quick Start
 
@@ -91,9 +82,9 @@ bearsampp-build/
 ## 📖 Where to Start
 
 1. **New user?** → Start with [QUICK_START.md](QUICK_START.md)
-2. **Need details?** → Read [GRADLE_INDEX.md](GRADLE_INDEX.md)
-3. **Migrating from Ant?** → See [MIGRATION_NOTES.md](MIGRATION_NOTES.md)
-4. **Want to understand the flow?** → Check [BUILD_FLOW.md](BUILD_FLOW.md)
+2. **Need overview?** → Read [GRADLE_INDEX.md](GRADLE_INDEX.md)
+3. **Want to understand the flow?** → Check [BUILD_FLOW.md](BUILD_FLOW.md)
+4. **Migrating from Ant?** → See [MIGRATION_NOTES.md](MIGRATION_NOTES.md)
 
 ## 💡 Example Interactive Session
 
@@ -279,20 +270,6 @@ See [QUICK_START.md](QUICK_START.md) for common issues and solutions.
 - Full documentation: See files in this directory
 - Issues: https://github.com/bearsampp/bearsampp/issues
 - Module info: https://bearsampp.com/module/mailpit
-
-## 🎯 Feature Parity with Bruno
-
-This build system has **complete feature parity** with the bruno module:
-
-✅ Interactive mode with version menu
-✅ Non-interactive mode for CI/CD
-✅ Auto-download from modules-untouched
-✅ Caching of downloads
-✅ Hash file generation
-✅ Overlay support
-✅ Batch building
-✅ Version discovery
-✅ Pure Gradle (no Ant)
 
 ---
 

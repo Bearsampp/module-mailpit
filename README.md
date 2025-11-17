@@ -1,64 +1,50 @@
-<div align="center"><a href="https://bearsampp.com/contribute" target="_blank"><img width="250" src="img/Bearsampp-logo.svg"></a></div>
+<p align="center"><a href="https://bearsampp.com/contribute" target="_blank"><img width="250" src="img/Bearsampp-logo.svg"></a></p>
 
 [![GitHub release](https://img.shields.io/github/release/bearsampp/module-mailpit.svg?style=flat-square)](https://github.com/bearsampp/module-mailpit/releases/latest)
 ![Total downloads](https://img.shields.io/github/downloads/bearsampp/module-mailpit/total.svg?style=flat-square)
 
-This is a module of [Bearsampp project](https://github.com/bearsampp/bearsampp) involving mailpit.
+This is a module of [Bearsampp project](https://github.com/bearsampp/bearsampp) involving Mailpit.
 
-## Building
-This module uses a 100% pure Gradle build system with no Ant dependencies:
+## Build System
 
-```bash
-# Interactive build (recommended)
-gradle release
-
-# Non-interactive build
-gradle release "-PbundleVersion=1.27.10"
-```
-
-The build system features:
-- ✅ Interactive version selection with numbered menu
-- ✅ Checks `bin/` and `bin/archived/` directories for local versions
-- ✅ Automatically downloads from modules-untouched repository if needed
-- ✅ Generates release archives with checksums (MD5, SHA1, SHA256, SHA512)
-- ✅ Caches downloads for faster subsequent builds
-- ✅ Supports both 7z and zip archive formats
+This project uses **Gradle** as its build system. The legacy Ant build has been fully replaced with a modern, pure Gradle implementation.
 
 ### Quick Start
 
 ```bash
-# Interactive build (shows version menu)
-gradle release
+# Display build information
+gradle info
 
-# Non-interactive build (specify version)
-gradle release "-PbundleVersion=1.27.10"
-
-# Build all available versions
-gradle releaseAll
-
-# List available versions
-gradle listVersions
-
-# List releases from modules-untouched
-gradle listReleases
+# List all available tasks
+gradle tasks
 
 # Verify build environment
 gradle verify
 
-# Display build information
-gradle info
+# Build a release (interactive)
+gradle release
+
+# Build a specific version (non-interactive)
+gradle release -PbundleVersion=1.27.10
 
 # Clean build artifacts
 gradle clean
 ```
 
-### Documentation
+### Available Tasks
 
-Complete documentation is available in [.gradle-docs/](.gradle-docs/):
-- **[QUICK_START.md](.gradle-docs/QUICK_START.md)** - Get started in 2 minutes
-- **[GRADLE_INDEX.md](.gradle-docs/GRADLE_INDEX.md)** - Documentation index
-- **[BUILD_FLOW.md](.gradle-docs/BUILD_FLOW.md)** - Visual diagrams and process flows
-- **[MIGRATION_NOTES.md](.gradle-docs/MIGRATION_NOTES.md)** - Migration details from Ant
+| Task                  | Description                                      |
+|-----------------------|--------------------------------------------------|
+| `release`             | Build release package (interactive/non-interactive) |
+| `releaseAll`          | Build all available versions                     |
+| `clean`               | Clean build artifacts and temporary files        |
+| `verify`              | Verify build environment and dependencies        |
+| `info`                | Display build configuration information          |
+| `listVersions`        | List available bundle versions in bin/           |
+| `listReleases`        | List releases from modules-untouched             |
+| `validateProperties`  | Validate build.properties configuration          |
+
+For complete documentation, see [.gradle-docs/README.md](.gradle-docs/README.md)
 
 ## Documentation and downloads
 
