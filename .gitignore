@@ -15,9 +15,3 @@
 
 # Qodo
 /.qodo
-
-# Gradle
-.gradle/
-build/
-gradle-app.setting
-.gradletasknamecache
