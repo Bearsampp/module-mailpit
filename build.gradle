@@ -624,6 +624,19 @@ tasks.register('release') {
         def bundleFolder = bundleSrcDest.name
         def bundleVersion = bundleFolder.replace(bundleName, '')
 
+        // Update bearsampp.conf in source directory FIRST
+        def sourceBearsamppConf = file("${bundleSrcDest}/bearsampp.conf")
+        if (sourceBearsamppConf.exists()) {
+            println "Updating bearsampp.conf in source directory..."
+            def confContent = sourceBearsamppConf.text
+            def updatedContent = confContent.replaceAll(
+                /mailpitVersion\s*=\s*"[^"]*"/,
+                "mailpitVersion = \"${bundleVersion}\""
+            )
+            sourceBearsamppConf.text = updatedContent
+            println "  Updated mailpitVersion to \"${bundleVersion}\" in ${bundleSrcDest.name}/bearsampp.conf"
+        }
+
         // Determine source paths
         def bundleSrcFinal = bundleSrcDest
 
@@ -678,17 +691,17 @@ tasks.register('release') {
         }
         mailpitPrepPath.mkdirs()
 
-        // Copy Mailpit files
+        // Copy Mailpit files (including the updated bearsampp.conf from source)
         println "Copying Mailpit files..."
         copy {
             from bundleSrcFinal
             into mailpitPrepPath
         }
 
-        // Copy bearsampp.conf if it exists in bin directory
+        // Copy bearsampp.conf from source if it exists and wasn't in bundleSrcFinal
         def bearsamppConf = file("${bundleSrcDest}/bearsampp.conf")
-        if (bearsamppConf.exists()) {
-            println "Copying bearsampp.conf..."
+        if (bearsamppConf.exists() && bundleSrcFinal != bundleSrcDest) {
+            println "Copying bearsampp.conf from source directory..."
             copy {
                 from bearsamppConf
                 into mailpitPrepPath
@@ -852,6 +865,19 @@ tasks.register('releaseAll') {
                 def bundleFolder = bundleSrcDest.name
                 def bundleVersion = bundleFolder.replace(bundleName, '')
 
+                // Update bearsampp.conf in source directory FIRST
+                def sourceBearsamppConf = file("${bundleSrcDest}/bearsampp.conf")
+                if (sourceBearsamppConf.exists()) {
+                    println "Updating bearsampp.conf in source directory..."
+                    def confContent = sourceBearsamppConf.text
+                    def updatedContent = confContent.replaceAll(
+                        /mailpitVersion\s*=\s*"[^"]*"/,
+                        "mailpitVersion = \"${bundleVersion}\""
+                    )
+                    sourceBearsamppConf.text = updatedContent
+                    println "  Updated mailpitVersion to \"${bundleVersion}\" in ${bundleSrcDest.name}/bearsampp.conf"
+                }
+
                 // Determine source paths
                 def bundleSrcFinal = bundleSrcDest
 
@@ -871,7 +897,7 @@ tasks.register('releaseAll') {
                 }
                 mailpitPrepPath.mkdirs()
 
-                // Copy Mailpit files
+                // Copy Mailpit files (including the already updated bearsampp.conf from source)
                 println "Copying Mailpit files..."
                 copy {
                     from bundleSrcDest
