@@ -3,23 +3,23 @@
   "owner": "Bearsampp",
   "repo": "module-mailpit",
   "visibility": "public",
-  "generatedAt": "2026-10-15T03:49:21.120Z",
+  "generatedAt": "2026-10-16T03:44:54.628Z",
   "stats": {
     "total": 1760,
-    "day": 8,
+    "day": 0,
     "week": 18,
     "month": 18
   },
   "partial": {
     "day": false,
-    "week": false,
+    "week": true,
     "month": true
   },
   "snapshots": {
     "windowDays": 180,
-    "count": 8,
+    "count": 9,
     "firstDate": "2026-10-07",
-    "lastDate": "2026-10-15",
+    "lastDate": "2026-10-16",
     "series": {
       "2026-10-07": 1742,
       "2026-10-08": 1742,
@@ -28,7 +28,8 @@
       "2026-10-12": 1743,
       "2026-10-13": 1745,
       "2026-10-14": 1752,
-      "2026-10-15": 1760
+      "2026-10-15": 1760,
+      "2026-10-16": 1760
     }
   },
   "profile": {
